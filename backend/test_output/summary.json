@@ -1,0 +1,11 @@
+{
+  "video_path": "test_video.mp4",
+  "total_frames_processed": 30,
+  "total_objects_detected": 6,
+  "total_actions_detected": 1,
+  "output_files": {
+    "pose": "test_output/pose.json",
+    "objects": "test_output/objects.json",
+    "actions": "test_output/actions.json"
+  }
+}

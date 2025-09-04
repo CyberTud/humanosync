@@ -18,6 +18,9 @@ processing_status = {}
 
 async def process_video(video_id: str, video_path: str):
     """Background task to process video with ML models"""
+    import subprocess
+    import sys
+    
     try:
         processing_status[video_id] = "processing"
         
@@ -25,22 +28,45 @@ async def process_video(video_id: str, video_path: str):
         output_dir = Path(f"data/{video_id}")
         output_dir.mkdir(parents=True, exist_ok=True)
         
-        # Extract pose
-        print(f"Extracting pose for video {video_id}")
+        # Try to use the real process_video.py script if available
+        process_script = Path("process_video.py")
+        if process_script.exists():
+            print(f"Running ML processing for video {video_id}")
+            try:
+                # Run the actual video processing script
+                result = subprocess.run(
+                    [sys.executable, "process_video.py", "--video", video_path, "--output", str(output_dir)],
+                    capture_output=True,
+                    text=True,
+                    timeout=60  # 60 second timeout
+                )
+                if result.returncode == 0:
+                    print(f"ML processing completed for video {video_id}")
+                    processing_status[video_id] = "completed"
+                    return
+                else:
+                    print(f"ML processing failed: {result.stderr}")
+            except subprocess.TimeoutExpired:
+                print("ML processing timed out, falling back to mock data")
+            except Exception as e:
+                print(f"Error running ML processing: {e}")
+        
+        # Fall back to mock processing
+        print(f"Using mock processing for video {video_id}")
+        
+        # Extract pose (mock)
         pose_extractor = PoseExtractor()
         pose_data = await asyncio.to_thread(
             pose_extractor.extract_from_video, video_path, output_dir
         )
         
-        # Extract objects
-        print(f"Extracting objects for video {video_id}")
+        # Extract objects (mock)
         object_detector = ObjectDetector()
         objects_data = await asyncio.to_thread(
             object_detector.extract_from_video, video_path, output_dir
         )
         
-        # Extract actions
-        print(f"Extracting actions for video {video_id}")
+        # Extract actions (mock)
         action_recognizer = ActionRecognizer()
         actions_data = await asyncio.to_thread(
             action_recognizer.extract_from_pose_and_objects,
@@ -152,3 +178,67 @@ async def get_video_info(video_id: str) -> Dict:
         "frame_count": frame_count,
         "status": processing_status.get(video_id, "unknown")
     }
+
+@router.get("/videos/{video_id}")
+async def get_video_details(video_id: str) -> Dict:
+    """Get video details for the annotate page"""
+    
+    # Look for video files with any extension
+    uploads_dir = Path("uploads")
+    video_files = list(uploads_dir.glob(f"{video_id}.*"))
+    
+    if not video_files:
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    video_path = video_files[0]
+    
+    # Get video URL path
+    video_url = f"/uploads/{video_path.name}"
+    
+    return {
+        "video_id": video_id,
+        "video_url": video_url,
+        "filename": video_path.name,
+        "status": processing_status.get(video_id, "unknown")
+    }
+
+@router.get("/videos/{video_id}/annotations")
+async def get_video_annotations(video_id: str) -> Dict:
+    """Get all annotations for a video"""
+    
+    data_dir = Path(f"data/{video_id}")
+    
+    # Initialize empty response
+    annotations = {
+        "video_id": video_id,
+        "pose": {},
+        "objects": {},
+        "actions": [],
+        "total_frames": 0,
+        "status": processing_status.get(video_id, "processing")
+    }
+    
+    # If data directory doesn't exist yet, return processing status
+    if not data_dir.exists():
+        return annotations
+    
+    # Load pose data
+    pose_file = data_dir / "pose.json"
+    if pose_file.exists():
+        with open(pose_file, 'r') as f:
+            annotations["pose"] = json.load(f)
+            annotations["total_frames"] = len(annotations["pose"])
+    
+    # Load objects data
+    objects_file = data_dir / "objects.json"
+    if objects_file.exists():
+        with open(objects_file, 'r') as f:
+            annotations["objects"] = json.load(f)
+    
+    # Load actions data
+    actions_file = data_dir / "actions.json"
+    if actions_file.exists():
+        with open(actions_file, 'r') as f:
+            annotations["actions"] = json.load(f)
+    
+    return annotations

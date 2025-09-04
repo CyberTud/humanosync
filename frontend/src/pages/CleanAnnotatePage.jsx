@@ -20,22 +20,163 @@ const CleanAnnotatePage = () => {
     actions: []
   });
 
-  // Load video and generate realistic annotations
+  // Load video and fetch real annotations from backend
   useEffect(() => {
-    // For demo, use a placeholder or the uploaded video
-    // In production, this would fetch the actual uploaded video
-    if (videoId === 'demo') {
-      // For demo, we'll show the placeholder
-      setVideoUrl(null);
-    } else {
-      // Try to load the actual uploaded video
-      // The backend should serve this file
-      setVideoUrl(`http://localhost:8000/api/video/${videoId}/file`);
-    }
+    const loadAnnotations = async () => {
+      try {
+        // Set video URL
+        if (videoId === 'demo') {
+          setVideoUrl(null);
+        } else {
+          setVideoUrl(`http://localhost:8000/api/video/${videoId}/file`);
+        }
 
-    // Generate realistic annotations based on video frames
-    generateRealisticAnnotations();
+        // Fetch real annotations from backend
+        const [poseResponse, objectsResponse, actionsResponse] = await Promise.all([
+          fetch(`http://localhost:8000/api/video/${videoId}/pose`).catch(() => null),
+          fetch(`http://localhost:8000/api/video/${videoId}/objects`).catch(() => null),
+          fetch(`http://localhost:8000/api/video/${videoId}/actions`).catch(() => null)
+        ]);
+
+        let poseData = {};
+        let objectData = {};
+        let actionData = [];
+
+        if (poseResponse && poseResponse.ok) {
+          poseData = await poseResponse.json();
+        }
+        if (objectsResponse && objectsResponse.ok) {
+          objectData = await objectsResponse.json();
+        }
+        if (actionsResponse && actionsResponse.ok) {
+          actionData = await actionsResponse.json();
+        }
+
+        // If we got real data, use it
+        if (Object.keys(poseData).length > 0 || Object.keys(objectData).length > 0 || actionData.length > 0) {
+          // Convert backend data format to frontend format
+          const convertedPose = convertPoseData(poseData);
+          const convertedObjects = convertObjectData(objectData);
+          const convertedActions = convertActionData(actionData);
+          
+          setAnnotations({
+            pose: convertedPose,
+            objects: convertedObjects,
+            actions: convertedActions
+          });
+        } else {
+          // Fall back to generated mock data if no real data
+          generateRealisticAnnotations();
+        }
+      } catch (error) {
+        console.error('Error loading annotations:', error);
+        // Fall back to mock data on error
+        generateRealisticAnnotations();
+      }
+    };
+
+    loadAnnotations();
   }, [videoId]);
+
+  // Convert backend pose data to frontend format
+  const convertPoseData = (backendPose) => {
+    const convertedPose = {};
+    
+    // Backend format: { "frame_001": { "keypoints": {...}, "confidence": 0.95 } }
+    // MediaPipe returns normalized coordinates (0-1) that need to be scaled
+    Object.entries(backendPose).forEach(([frameKey, frameData]) => {
+      const frameNum = parseInt(frameKey.replace('frame_', ''));
+      const keypoints = [];
+      
+      if (frameData.keypoints) {
+        Object.entries(frameData.keypoints).forEach(([label, coords]) => {
+          // If coordinates are normalized (0-1), they'll be scaled later in drawAnnotations
+          // If they're already in pixels, they'll be used as-is
+          let x = coords[0];
+          let y = coords[1];
+          
+          // Check if coordinates appear to be normalized (all values between 0 and 1)
+          const isNormalized = x <= 1 && y <= 1;
+          
+          if (isNormalized) {
+            // Convert normalized to pixel coordinates assuming standard video size
+            x = x * 1920;  // Standard video width
+            y = y * 1080;  // Standard video height
+          }
+          
+          keypoints.push({
+            x: x,
+            y: y,
+            z: coords[2] || 0,
+            label: label,
+            confidence: frameData.confidence || 0.9
+          });
+        });
+      }
+      
+      convertedPose[frameNum] = keypoints;
+    });
+    
+    return convertedPose;
+  };
+  
+  // Convert backend object data to frontend format
+  const convertObjectData = (backendObjects) => {
+    const convertedObjects = {};
+    
+    // Backend format: { "frame_001": [{ "label": "cup", "bbox": [x1,y1,x2,y2], "confidence": 0.9 }] }
+    // Frontend needs: { 0: [{ x, y, width, height, label, confidence }] }
+    Object.entries(backendObjects).forEach(([frameKey, objects]) => {
+      const frameNum = parseInt(frameKey.replace('frame_', ''));
+      const convertedFrame = [];
+      
+      if (Array.isArray(objects)) {
+        objects.forEach(obj => {
+          convertedFrame.push({
+            x: obj.bbox[0],
+            y: obj.bbox[1],
+            width: obj.bbox[2] - obj.bbox[0],
+            height: obj.bbox[3] - obj.bbox[1],
+            label: obj.label,
+            confidence: obj.confidence || 0.9
+          });
+        });
+      }
+      
+      convertedObjects[frameNum] = convertedFrame;
+    });
+    
+    return convertedObjects;
+  };
+  
+  // Convert backend action data to frontend format
+  const convertActionData = (backendActions) => {
+    // Backend format: [{ "label": "pick", "start_frame": 120, "end_frame": 160, "confidence": 0.88 }]
+    // Frontend format is similar but add color mapping
+    const actionColors = {
+      'stand': 'bg-gray-500',
+      'standing': 'bg-gray-500',
+      'walk': 'bg-blue-500',
+      'walking': 'bg-blue-500',
+      'reach': 'bg-green-500',
+      'reaching': 'bg-green-500',
+      'pick': 'bg-purple-500',
+      'picking': 'bg-purple-500',
+      'wave': 'bg-yellow-500',
+      'waving': 'bg-yellow-500',
+      'sit': 'bg-red-500',
+      'sitting': 'bg-red-500',
+      'grasp': 'bg-indigo-500',
+      'grasping': 'bg-indigo-500',
+      'lift': 'bg-pink-500',
+      'lifting': 'bg-pink-500'
+    };
+    
+    return backendActions.map(action => ({
+      ...action,
+      color: actionColors[action.label.toLowerCase()] || 'bg-blue-500'
+    }));
+  };
 
   const generateRealisticAnnotations = () => {
     const poseData = {};
@@ -108,63 +249,117 @@ const CleanAnnotatePage = () => {
   };
 
   const handleVideoLoaded = () => {
-    if (videoRef.current) {
+    if (videoRef.current && canvasRef.current) {
       setDuration(videoRef.current.duration);
+      
+      // Adjust canvas size to match video display size
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      
+      // Wait for video metadata to load
+      if (video.videoWidth && video.videoHeight) {
+        // Set canvas internal size to match display size
+        canvas.width = video.clientWidth;
+        canvas.height = video.clientHeight;
+        
+        console.log('Video dimensions:', video.videoWidth, 'x', video.videoHeight);
+        console.log('Canvas dimensions:', canvas.width, 'x', canvas.height);
+      }
     }
   };
 
   const drawAnnotations = (frame) => {
-    if (!canvasRef.current) return;
+    if (!canvasRef.current || !videoRef.current) return;
     const ctx = canvasRef.current.getContext('2d');
-    ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    const canvas = canvasRef.current;
+    
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Get video dimensions for scaling
+    const videoWidth = videoRef.current.videoWidth || 1920;
+    const videoHeight = videoRef.current.videoHeight || 1080;
+    const canvasWidth = canvas.width;
+    const canvasHeight = canvas.height;
+    
+    // Calculate scale factors
+    const scaleX = canvasWidth / videoWidth;
+    const scaleY = canvasHeight / videoHeight;
     
     if (selectedTool === 'pose' && annotations.pose[frame]) {
-      // Draw skeleton
+      const points = annotations.pose[frame];
+      
+      // Create a map of keypoints by label for easy access
+      const keypointMap = {};
+      points.forEach(point => {
+        keypointMap[point.label] = {
+          x: point.x * scaleX,
+          y: point.y * scaleY
+        };
+      });
+      
+      // Draw skeleton connections based on MediaPipe connections
       ctx.strokeStyle = '#3B82F6';
       ctx.lineWidth = 2;
       
-      const points = annotations.pose[frame];
-      if (points.length >= 4) {
-        // Connect neck to shoulders
-        ctx.beginPath();
-        ctx.moveTo(points[1].x, points[1].y);
-        ctx.lineTo(points[2].x, points[2].y);
-        ctx.stroke();
+      // Define skeleton connections
+      const connections = [
+        // Face
+        ['nose', 'left_eye'], ['nose', 'right_eye'],
+        ['left_eye', 'left_ear'], ['right_eye', 'right_ear'],
         
-        ctx.beginPath();
-        ctx.moveTo(points[1].x, points[1].y);
-        ctx.lineTo(points[3].x, points[3].y);
-        ctx.stroke();
+        // Arms
+        ['left_shoulder', 'right_shoulder'],
+        ['left_shoulder', 'left_elbow'],
+        ['left_elbow', 'left_wrist'],
+        ['right_shoulder', 'right_elbow'],
+        ['right_elbow', 'right_wrist'],
         
-        // Draw arms if we have enough points
-        if (points.length >= 7) {
-          // Left arm
+        // Torso
+        ['left_shoulder', 'left_hip'],
+        ['right_shoulder', 'right_hip'],
+        ['left_hip', 'right_hip'],
+        
+        // Legs
+        ['left_hip', 'left_knee'],
+        ['left_knee', 'left_ankle'],
+        ['right_hip', 'right_knee'],
+        ['right_knee', 'right_ankle']
+      ];
+      
+      // Draw connections
+      connections.forEach(([start, end]) => {
+        if (keypointMap[start] && keypointMap[end]) {
           ctx.beginPath();
-          ctx.moveTo(points[2].x, points[2].y);
-          ctx.lineTo(points[4].x, points[4].y);
-          ctx.lineTo(points[6].x, points[6].y);
-          ctx.stroke();
-          
-          // Right arm
-          ctx.beginPath();
-          ctx.moveTo(points[3].x, points[3].y);
-          ctx.lineTo(points[5].x, points[5].y);
-          ctx.lineTo(points[7].x, points[7].y);
+          ctx.moveTo(keypointMap[start].x, keypointMap[start].y);
+          ctx.lineTo(keypointMap[end].x, keypointMap[end].y);
           ctx.stroke();
         }
-      }
+      });
       
       // Draw keypoints
-      annotations.pose[frame].forEach(point => {
+      points.forEach(point => {
+        const x = point.x * scaleX;
+        const y = point.y * scaleY;
+        
+        // Draw point
         ctx.fillStyle = '#3B82F6';
         ctx.beginPath();
-        ctx.arc(point.x, point.y, 5, 0, 2 * Math.PI);
+        ctx.arc(x, y, 4, 0, 2 * Math.PI);
         ctx.fill();
         
-        // Draw label
-        ctx.fillStyle = 'white';
-        ctx.font = '10px sans-serif';
-        ctx.fillText(point.label, point.x + 8, point.y - 8);
+        // Draw white border for visibility
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        
+        // Optionally draw labels (only for some key points to avoid clutter)
+        const labelsToShow = ['nose', 'left_wrist', 'right_wrist', 'left_ankle', 'right_ankle'];
+        if (labelsToShow.includes(point.label)) {
+          ctx.fillStyle = 'white';
+          ctx.font = '10px sans-serif';
+          ctx.fillText(point.label, x + 8, y - 8);
+        }
       });
     }
     
@@ -177,17 +372,40 @@ const CleanAnnotatePage = () => {
       
       if (annotations.objects[objectFrame]) {
         annotations.objects[objectFrame].forEach(obj => {
+          // Scale object coordinates
+          const x = obj.x * scaleX;
+          const y = obj.y * scaleY;
+          const width = obj.width * scaleX;
+          const height = obj.height * scaleY;
+          
           // Draw bounding box
           ctx.strokeStyle = '#10b981';
           ctx.lineWidth = 2;
-          ctx.strokeRect(obj.x, obj.y, obj.width, obj.height);
+          ctx.strokeRect(x, y, width, height);
           
-          // Draw label
-          ctx.fillStyle = '#10b981';
-          ctx.fillRect(obj.x, obj.y - 20, obj.label.length * 8 + 10, 20);
-          ctx.fillStyle = 'black';
+          // Draw label background
+          const labelText = `${obj.label} ${(obj.confidence * 100).toFixed(0)}%`;
+          const labelWidth = ctx.measureText(labelText).width + 10;
+          
+          ctx.fillStyle = 'rgba(16, 185, 129, 0.9)';
+          ctx.fillRect(x, y - 20, labelWidth, 20);
+          
+          // Draw label text
+          ctx.fillStyle = 'white';
           ctx.font = '12px sans-serif';
-          ctx.fillText(obj.label, obj.x + 5, obj.y - 5);
+          ctx.fillText(labelText, x + 5, y - 5);
+          
+          // Draw confidence indicator
+          if (obj.confidence < 0.5) {
+            ctx.strokeStyle = 'red';
+          } else if (obj.confidence < 0.7) {
+            ctx.strokeStyle = 'yellow';
+          } else {
+            ctx.strokeStyle = '#10b981';
+          }
+          ctx.setLineDash([5, 5]);
+          ctx.strokeRect(x, y, width, height);
+          ctx.setLineDash([]);
         });
       }
     }
@@ -325,11 +543,12 @@ const CleanAnnotatePage = () => {
                     <video
                       ref={videoRef}
                       src={videoUrl}
-                      className="w-full h-full bg-black rounded-lg"
+                      className="w-full h-full bg-black rounded-lg object-contain"
                       onTimeUpdate={handleVideoTimeUpdate}
                       onLoadedMetadata={handleVideoLoaded}
                       onPlay={() => setIsPlaying(true)}
                       onPause={() => setIsPlaying(false)}
+                      crossOrigin="anonymous"
                     />
                     {/* Annotation Overlay Canvas */}
                     <canvas
@@ -337,6 +556,7 @@ const CleanAnnotatePage = () => {
                       width={800}
                       height={450}
                       className="absolute top-0 left-0 pointer-events-none"
+                      style={{ width: '100%', height: '100%' }}
                     />
                   </>
                 ) : (
