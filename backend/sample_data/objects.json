@@ -1,0 +1,31 @@
+{
+  "frame_001": [
+    {
+      "label": "cup",
+      "bbox": [150, 200, 190, 240],
+      "confidence": 0.91
+    },
+    {
+      "label": "table",
+      "bbox": [100, 400, 500, 600],
+      "confidence": 0.95
+    }
+  ],
+  "frame_002": [
+    {
+      "label": "cup",
+      "bbox": [151, 200, 191, 240],
+      "confidence": 0.92
+    },
+    {
+      "label": "table",
+      "bbox": [100, 400, 500, 600],
+      "confidence": 0.95
+    },
+    {
+      "label": "hand",
+      "bbox": [165, 485, 185, 515],
+      "confidence": 0.88
+    }
+  ]
+}

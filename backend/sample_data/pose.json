@@ -1,0 +1,46 @@
+{
+  "frame_001": {
+    "keypoints": {
+      "nose": [250, 180],
+      "left_eye": [230, 170],
+      "right_eye": [270, 170],
+      "left_ear": [210, 175],
+      "right_ear": [290, 175],
+      "left_shoulder": [200, 300],
+      "right_shoulder": [300, 300],
+      "left_elbow": [180, 400],
+      "right_elbow": [320, 400],
+      "left_wrist": [170, 500],
+      "right_wrist": [330, 500],
+      "left_hip": [220, 450],
+      "right_hip": [280, 450],
+      "left_knee": [210, 550],
+      "right_knee": [290, 550],
+      "left_ankle": [200, 650],
+      "right_ankle": [300, 650]
+    },
+    "confidence": 0.94
+  },
+  "frame_002": {
+    "keypoints": {
+      "nose": [252, 180],
+      "left_eye": [232, 170],
+      "right_eye": [272, 170],
+      "left_ear": [212, 175],
+      "right_ear": [292, 175],
+      "left_shoulder": [202, 300],
+      "right_shoulder": [302, 300],
+      "left_elbow": [182, 400],
+      "right_elbow": [322, 400],
+      "left_wrist": [172, 500],
+      "right_wrist": [332, 500],
+      "left_hip": [222, 450],
+      "right_hip": [282, 450],
+      "left_knee": [212, 550],
+      "right_knee": [292, 550],
+      "left_ankle": [202, 650],
+      "right_ankle": [302, 650]
+    },
+    "confidence": 0.93
+  }
+}
