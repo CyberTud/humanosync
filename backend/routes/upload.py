@@ -1,9 +1,11 @@
 from fastapi import APIRouter, File, UploadFile, HTTPException, BackgroundTasks
+from fastapi.responses import FileResponse
 from pathlib import Path
 import uuid
 import shutil
 import json
 from typing import Dict
+import os
 from services.pose_mock import PoseExtractor
 from services.objects_mock import ObjectDetector
 from services.actions import ActionRecognizer
@@ -99,6 +101,28 @@ async def get_processing_status(video_id: str) -> Dict:
         "video_id": video_id,
         "status": processing_status[video_id]
     }
+
+@router.get("/video/{video_id}/file")
+async def get_video_file(video_id: str):
+    """Serve the uploaded video file"""
+    
+    # Look for video files with any extension
+    uploads_dir = Path("uploads")
+    video_files = list(uploads_dir.glob(f"{video_id}.*"))
+    
+    if not video_files:
+        raise HTTPException(status_code=404, detail="Video file not found")
+    
+    video_path = video_files[0]
+    
+    if not video_path.exists():
+        raise HTTPException(status_code=404, detail="Video file not found")
+    
+    return FileResponse(
+        path=str(video_path),
+        media_type="video/mp4",
+        filename=video_path.name
+    )
 
 @router.get("/video/{video_id}/info")
 async def get_video_info(video_id: str) -> Dict:
